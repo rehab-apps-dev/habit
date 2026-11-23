@@ -187,10 +187,7 @@ const today=()=>{const d=new Date();d.setHours(0,0,0,0);return d};
 const monday=d=>addDays(d,-((d.getDay()+6)%7));
 const WD=['月','火','水','木','金','土','日'];
 const KEY='habit-stamp-v1';
-const sample=()=>({habits:[
-  {id:'h1',name:'スクワット10回',trig:'朝、歯みがきが終わったら',act:'その場でスクワットを10回する',cope:'残業で疲れていたら',min:'スクワットを1回だけする',goal:5,start:ymd(today())},
-  {id:'h2',name:'論文アブストを1本読む',trig:'昼休みにコーヒーを入れたら',act:'PubMedで1本アブストを読む',goal:3,start:ymd(today())}
-],log:{},sample:true});
+const sample=()=>({habits:[],log:{},sample:false,v:2});
 let state=null,editing=null,undoState=null,dbRef=null,saveT=null;
 
 try{state=JSON.parse(localStorage.getItem(KEY))}catch(e){}
@@ -198,6 +195,22 @@ if(!state||!Array.isArray(state.habits))state=sample();
 const norm=()=>{state.log=state.log||{};state.reviews=state.reviews||{}};norm();
 const SRBAI=['自動的にやっている','意識して思い出さなくてもやっている','考えずにやっている','気づいたらもう始めている'];
 let revOpen=null,revDraft=[];
+
+// ===== データ移行（マイグレーション）=====
+// データの版番号。データの形を変えるたびに1つ上げる
+const DATA_V=2;
+function migrate(){
+  const v=state.v||1;
+  if(v<2){
+    // 版1→2：最初に入っていた例の2つを片付ける
+    // 条件：IDと名前が例のまま、かつ判子・振り返りが1回もないものだけ
+    const EXAMPLES={h1:'スクワット10回',h2:'論文アブストを1本読む'};
+    const unused=h=>!Object.keys(state.log[h.id]||{}).length&&!Object.keys(state.reviews[h.id]||{}).length;
+    state.habits=state.habits.filter(h=>!(EXAMPLES[h.id]===h.name&&unused(h)));
+  }
+  if(v<DATA_V){state.v=DATA_V;state.sample=false;save()}
+}
+migrate();
 
 for(let i=1;i<=7;i++)$('#fGoal').insertAdjacentHTML('beforeend',`<option value="${i}">${i}回${i===7?'（毎日）':''}</option>`);
 $('#fGoal').value='5';
@@ -319,7 +332,7 @@ function render(){
         <div class="row"><button class="btn" type="button" data-edit="${h.id}">編集</button><button class="btn del" type="button" data-askdel="${h.id}">削除</button></div>
         <div class="confirm" id="c-${h.id}">記録もすべて消えます。削除しますか？
           <div class="row"><button class="btn del" type="button" data-del="${h.id}">削除する</button><button class="btn" type="button" data-nodel="${h.id}">やめる</button></div></div>
-      </details></article>`}).join('')+(state.sample?'<div class="plan" style="text-align:center">最初の2つは例です。編集・削除して使ってください。</div>':'');
+      </details></article>`}).join('');
 }
 
 $('#list').addEventListener('click',e=>{
@@ -383,7 +396,7 @@ $('#exportBtn').addEventListener('click',()=>{
 $('#importFile').addEventListener('change',async e=>{
   const f=e.target.files[0];if(!f)return;
   try{const d=JSON.parse(await f.text());if(!Array.isArray(d.habits))throw 0;
-    undoState=JSON.stringify(state);state=d;norm();save();render();showToast('記録を読み込みました');}
+    undoState=JSON.stringify(state);state=d;norm();migrate();save();render();showToast('記録を読み込みました');}
   catch(err){showToast('読み込めないファイルです')}
   e.target.value='';
 });
